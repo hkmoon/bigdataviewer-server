@@ -40,6 +40,8 @@ import java.util.regex.Pattern;
  */
 public class Keystore
 {
+	public static final String defaultPath = "etc/keystore.jks";
+
 	public static final Pattern JAVA_VERSION = Pattern.compile( "([0-9]*.[0-9]*)(.*)?" );
 
 	/**
@@ -80,7 +82,7 @@ public class Keystore
 	public static boolean checkKeystore()
 	{
 		// check if "etc/keystore.jks" exists
-		if ( Files.exists( Paths.get( "etc/keystore.jks" ) ) )
+		if ( Files.exists( Paths.get( defaultPath ) ) )
 			return true;
 		else
 		{
@@ -149,7 +151,7 @@ public class Keystore
 						new java.security.cert.Certificate[] { cert } );
 
 				// Generate new cert
-				keyStoreFile = new FileOutputStream( "etc/keystore.jks" );
+				keyStoreFile = new FileOutputStream( defaultPath );
 				keyStore.store( keyStoreFile, password.toCharArray() );
 				keyStoreFile.close();
 			}

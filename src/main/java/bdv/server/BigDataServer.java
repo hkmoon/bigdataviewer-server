@@ -1,7 +1,10 @@
 package bdv.server;
 
 import bdv.model.DataSet;
+import bdv.util.Keystore;
+
 import mpicbg.spim.data.SpimDataException;
+
 import org.apache.commons.cli.*;
 import org.apache.commons.lang.StringUtils;
 import org.eclipse.jetty.security.ConstraintMapping;
@@ -28,8 +31,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-
-import static bdv.util.Keystore.checkKeystore;
 
 /**
  * Serve XML/HDF5 datasets over HTTP.
@@ -121,7 +122,7 @@ public class BigDataServer
 		Handler handler = handlers;
 		if ( params.enableManagerContext() )
 		{
-			if ( !checkKeystore() )
+			if ( !Keystore.checkKeystore() )
 				throw new IllegalArgumentException( "Keystore file does not exist." );
 
 			if ( !checkRealmProperty() )
@@ -131,7 +132,7 @@ public class BigDataServer
 			https.addCustomizer( new SecureRequestCustomizer() );
 
 			final SslContextFactory sslContextFactory = new SslContextFactory();
-			sslContextFactory.setKeyStorePath( "etc/keystore.jks" );
+			sslContextFactory.setKeyStorePath( Keystore.defaultPath );
 
 			final char passwordArray[] = System.console().readPassword( "Please, enter your keystore password: " );
 			String password = new String( passwordArray );
@@ -243,7 +244,7 @@ public class BigDataServer
 	/**
 	 * Server parameters: hostname, port, sslPort, datasets.
 	 */
-	private static class Parameters
+	protected static class Parameters
 	{
 		private final int port;
 
@@ -456,7 +457,7 @@ public class BigDataServer
 		}
 	}
 
-	private static void tryAddDataset( final HashMap< String, DataSet > datasetNameToDataSet, final String... args ) throws IllegalArgumentException
+	protected static void tryAddDataset( final HashMap< String, DataSet > datasetNameToDataSet, final String... args ) throws IllegalArgumentException
 	{
 		if ( args.length >= 2 )
 		{
@@ -488,7 +489,7 @@ public class BigDataServer
 		}
 	}
 
-	private static String getThumbnailDirectoryPath( final Parameters params ) throws IOException
+	protected static String getThumbnailDirectoryPath( final Parameters params ) throws IOException
 	{
 		final String thumbnailDirectoryName = params.getThumbnailDirectory();
 		if ( thumbnailDirectoryName != null )
@@ -520,7 +521,7 @@ public class BigDataServer
 		return thumbnails.toFile().getAbsolutePath();
 	}
 
-	private static ContextHandlerCollection createHandlers( final String baseURL, final Map< String, DataSet > dataSet, final String thumbnailsDirectoryName ) throws SpimDataException, IOException
+	protected static ContextHandlerCollection createHandlers( final String baseURL, final Map< String, DataSet > dataSet, final String thumbnailsDirectoryName ) throws SpimDataException, IOException
 	{
 		final ContextHandlerCollection handlers = new ContextHandlerCollection();
 
