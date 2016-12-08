@@ -31,7 +31,6 @@
 
 	<properties>
 		<enforcer.skip>true</enforcer.skip>
-		<!-- <jetty.version>9.2.10.v20150310</jetty.version> -->
 	</properties>
 
 	<repositories>
