@@ -249,7 +249,7 @@ public class CellHandler extends ContextHandler
 
 	public void setIndex(final String idx)
 	{
-		dataSet.setIndex( idx );
+		dataSet.setIndex( Integer.parseInt( idx ) );
 	}
 
 	/**

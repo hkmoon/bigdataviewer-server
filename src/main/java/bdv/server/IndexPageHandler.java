@@ -81,7 +81,7 @@ public class IndexPageHandler extends ContextHandler
 				// return 0 otherwise
 				if ( lhs.getCategory().equals( rhs.getCategory() ) )
 				{
-					return lhs.getIndex().compareToIgnoreCase( rhs.getIndex() );
+					return lhs.getIndex() - rhs.getIndex();
 				}
 				else
 				{

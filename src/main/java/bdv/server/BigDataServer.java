@@ -483,7 +483,7 @@ public class BigDataServer
 				index = args[ 4 ];
 			}
 
-			DataSet ds = new DataSet( name, xmlpath, category, desc, index );
+			DataSet ds = new DataSet( Integer.parseInt( index ), name, xmlpath, category, desc );
 			datasetNameToDataSet.put( name, ds );
 			LOG.info( "Dataset added: {" + name + ", " + xmlpath + "}" );
 		}

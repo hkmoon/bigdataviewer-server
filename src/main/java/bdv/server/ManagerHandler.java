@@ -204,7 +204,7 @@ public class ManagerHandler extends ContextHandler
 		if ( !alreadyExists )
 		{
 			CellHandler ctx = null;
-			final DataSet dataSet = new DataSet( datasetName, fileLocation, category, description, index );
+			final DataSet dataSet = new DataSet( Integer.parseInt( index ), datasetName, fileLocation, category, description );
 
 			try
 			{
@@ -454,7 +454,7 @@ public class ManagerHandler extends ContextHandler
 				if ( field.equals( "category" ) )
 					dataSet.setCategory( value );
 				else if ( field.equals( "index" ) )
-					dataSet.setIndex( value );
+					dataSet.setIndex( Integer.parseInt( value ) );
 				else if ( field.equals( "description" ) )
 					dataSet.setDescription( value );
 

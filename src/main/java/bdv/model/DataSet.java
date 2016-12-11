@@ -9,7 +9,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.TreeSet;
 
 /**
  * DataSet class holds SPIM dataset information
@@ -31,7 +33,7 @@ public class DataSet
 
 	private String category;
 	private String description;
-	private String index;
+	private int index;
 	private long size;
 
 	private String thumbnailUrl;
@@ -39,16 +41,22 @@ public class DataSet
 
 	public static int numBackups = 5;
 
+	private String owner;
+	private boolean publicAccessble = false;
+	private java.sql.Timestamp updatedTime;
+
+	private final TreeSet< String > tags = new TreeSet<>();
+
 	/**
 	 * Instantiates a new DataSet
 	 *
+	 * @param index the index of the dataset
 	 * @param name the dataset Context name
 	 * @param xmlPath the dataset XML file path
 	 * @param category the category of the dataset
 	 * @param description the description of the dataset
-	 * @param index the index of the dataset
 	 */
-	public DataSet( String name, String xmlPath, String category, String description, String index )
+	public DataSet( int index, String name, String xmlPath, String category, String description )
 	{
 		this.name = name;
 		this.xmlPath = xmlPath;
@@ -56,6 +64,18 @@ public class DataSet
 		this.description = description;
 		this.index = index;
 	}
+
+	public DataSet( int index, String name, String xmlPath, String description, String owner, boolean isPublic, Timestamp updatedTime )
+	{
+		this.index = index;
+		this.name = name;
+		this.xmlPath = xmlPath;
+		this.description = description;
+		this.owner = owner;
+		this.publicAccessble = isPublic;
+		this.updatedTime = updatedTime;
+	}
+
 
 	/**
 	 * Sets dataSetList path.
@@ -132,7 +152,7 @@ public class DataSet
 	 *
 	 * @return the index
 	 */
-	public String getIndex()
+	public int getIndex()
 	{
 		return index;
 	}
@@ -142,7 +162,7 @@ public class DataSet
 	 *
 	 * @param index the index
 	 */
-	public void setIndex( String index )
+	public void setIndex( int index )
 	{
 		this.index = index;
 	}
@@ -195,6 +215,41 @@ public class DataSet
 	public void setDatasetUrl( String datasetUrl )
 	{
 		this.datasetUrl = datasetUrl;
+	}
+
+	public String getOwner()
+	{
+		return owner;
+	}
+
+	public Timestamp getUpdatedTime()
+	{
+		return updatedTime;
+	}
+
+	public void setUpdatedTime( Timestamp updatedTime )
+	{
+		this.updatedTime = updatedTime;
+	}
+
+	public boolean isPublic()
+	{
+		return publicAccessble;
+	}
+
+	public void setPublic( boolean publicAccessble )
+	{
+		this.publicAccessble = publicAccessble;
+	}
+
+	public TreeSet< String > getTags()
+	{
+		return tags;
+	}
+
+	public void addTag( String title )
+	{
+		tags.add( title );
 	}
 
 	/**
