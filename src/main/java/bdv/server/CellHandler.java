@@ -446,4 +446,12 @@ public class CellHandler extends ContextHandler
 			url = url.substring( 0, url.lastIndexOf( "/" ) );
 		respondWithString( baseRequest, response, "application/bdv", url );
 	}
+
+	public boolean isOwned( String userId )
+	{
+		if ( null != dataSet && null != dataSet.getOwner() )
+			return dataSet.getOwner().equals( userId );
+		else
+			return false;
+	}
 }
