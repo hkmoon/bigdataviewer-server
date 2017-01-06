@@ -7,9 +7,13 @@
         $('.dataSetName').editable();
         $('.dataSetDescription').editable();
 
+        $('.public-checkbox').each(function () {
+            this.checked = $(this).val() == "true";
+        });
+
         $('.tags-input').on('beforeItemAdd', function (event) {
             var tag = event.item;
-            console.info(event.target);
+//            console.info(event.target);
 
             var ajaxData = {
                 data: {
@@ -94,6 +98,56 @@
                 .done(function () {
                     location.reload(true);
                 });
+        });
+
+        $('#addDS').on('click', function () {
+            $.ajax({
+                type: "POST",
+                url: "?op=addDS",
+                data: {
+                    name: $('#name-text').val(),
+                    tags: $('#tags-text').val(),
+                    description: $('#description-text').val(),
+                    file: $('#file').val(),
+                    public: $('#is-public').prop('checked')
+                },
+                success: function (msg) {
+                    if (msg.match("^Error")) {
+                        $('#error').html(msg);
+                        $('#error').fadeIn(600).delay(5000).fadeOut(600);
+                    }
+                    else if (msg.match("^Success")) {
+                        $('.form-control').val("");
+                        $('#success').html(msg);
+                        $('#success').fadeIn(600).delay(5000).fadeOut(600);
+                        location.reload(true);
+                    }
+
+                    console.info(msg);
+                }
+            });
+        });
+
+        $('.removeDS').on('click', function () {
+            $.ajax({
+                type: "POST",
+                url: "?op=removeDS",
+                data: {dataset: this.getAttribute('dataSetId')},
+                success: function (msg) {
+                    if (msg.match("^Error")) {
+                        $('#error').html(msg);
+                        $('#error').fadeIn(600).delay(5000).fadeOut(600);
+                    }
+                    else if (msg.match("^Success")) {
+                        $('.form-control').val("");
+                        $('#success').html(msg);
+                        $('#success').fadeIn(600).delay(5000).fadeOut(600);
+                        location.reload(true);
+                    }
+
+                    console.info(msg);
+                }
+            });
         });
     });
 

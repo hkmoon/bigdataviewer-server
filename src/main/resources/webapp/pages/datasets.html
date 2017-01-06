@@ -32,6 +32,15 @@
     <!-- Bootstrap editable -->
     <link href="../css/bootstrap-editable.css" rel="stylesheet"/>
 
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-tagsinput/0.8.0/bootstrap-tagsinput.css"
+          rel="stylesheet">
+
+    <style>
+        .bootstrap-tagsinput {
+            min-width: 100%;
+        }
+    </style>
+
     <!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
     <!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
     <!--[if lt IE 9]>
@@ -98,41 +107,47 @@
                                 <thead>
                                 <tr>
                                     <th>Active</th>
-                                    <th>Category</th>
                                     <th>Index</th>
+                                    <th>Tags</th>
                                     <th>Name</th>
+                                    <th>Owner</th>
                                     <th>Description</th>
                                     <th>Path</th>
+                                    <th>Remove</th>
                                 </tr>
                                 </thead>
                             </table>
                         </div>
                         <!-- /.table-responsive -->
                         <div class="well">
-                            <h4>Dataset deployment</h4>
+                            <h4>Add New Dataset</h4>
 
                             <form action="/manager/" method="POST">
                                 <div class="input-group">
                                     <span class="input-group-addon" id="basic-addon1">Dataset</span>
-                                    <input name="ds" id="ds" type="text" class="form-control" placeholder="Name"
+                                    <input name="name-text" id="name-text" type="text" class="form-control"
+                                           placeholder="Name"
                                            aria-describedby="basic-addon1"/>
-                                    <input name="category-text" id="category-text" type="text" class="form-control"
-                                           placeholder="Category"
+                                    <input name="tags-text" id="tags-text" type="text" class="form-control"
+                                           data-role="tagsinput"
                                            aria-describedby="basic-addon1"/>
                                     <input name="description-text" id="description-text" type="text"
                                            class="form-control" placeholder="Description"
                                            aria-describedby="basic-addon1"/>
-                                    <input name="index-number" id="index-number" type="text-number" class="form-control"
-                                           placeholder="Index number"
-                                           aria-describedby="basic-addon1"/>
                                     <input name="file" id="file" type="text" class="form-control" placeholder="Location"
                                            aria-describedby="basic-addon1"/>
+                                    <input name="owner" id="owner" type="text" class="form-control"
+                                           placeholder="Owner User ID"
+                                           aria-describedby="basic-addon1"/>
+                                    <span class="input-group-addon">
+                                        <label class="form-check-label">
+                                            <input name="is-public" id="is-public" type="checkbox"
+                                                   class="form-check-input" placeholder="Public"/> Public
+                                        </label>
+                                    </span>
                                 </div>
 
-                                <button type="button" class="btn btn-info btn-group-justified" id="deployDS">Deploy
-                                </button>
-                                <button type="button" class="btn btn-danger btn-group-justified" id="undeployDS">
-                                    Undeploy
+                                <button type="button" class="btn btn-info btn-group-justified" id="addDS">Add
                                 </button>
                             </form>
 
@@ -179,6 +194,8 @@
 <!-- Custom Theme JavaScript -->
 <script src="../js/bdserver.js"></script>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-tagsinput/0.8.0/bootstrap-tagsinput.min.js"></script>
+
 <!-- Page-Level Demo Scripts - Tables - Use for reference -->
 <script>
     var dataTable = null;
@@ -199,32 +216,44 @@
                     },
                     className: "dt-body-center"
                 },
-                { data: "category",
+                {data: "index"},
+                {
+                    data: "tags",
                     render: function (data, type, row) {
                         if (type === 'display') {
-                            return '<a href="#" id="category" class="category" data-type="text" data-pk="' + row.name + '" data-url="/manager/?op=updateDS" data-title="Enter category">' + data + '</a>';
+                            return '<input name="tagsinput" type="text" value="' + data + '" data-role="tagsinput" dataSetId="' + row.index + '" class="tags-input"/>';
                         }
                         return data;
                     }
                 },
-                { data: "index",
+                {
+                    data: "name",
                     render: function (data, type, row) {
                         if (type === 'display') {
-                            return '<a href="#" id="index" class="index" data-type="text" data-pk="' + row.name + '" data-url="/manager/?op=updateDS" data-title="Enter index">' + data + '</a>';
+                            return '<a href="#" id="name" class="name" data-type="text" data-pk="' + row.index + '" data-url="/manager/?op=updateDS" data-title="Enter index">' + data + '</a>';
                         }
                         return data;
                     }
                 },
-                { data: "name" },
+                {data: "owner"},
                 { data: "description",
                     render: function (data, type, row) {
                         if (type === 'display') {
-                            return '<a href="#" id="description" class="description" data-type="text" data-pk="' + row.name + '" data-url="/manager/?op=updateDS" data-title="Enter description">' + data + '</a>';
+                            return '<a href="#" id="description" class="description" data-type="text" data-pk="' + row.index + '" data-url="/manager/?op=updateDS" data-title="Enter description">' + data + '</a>';
                         }
                         return data;
                     }
                 },
-                { data: "path" }
+                {data: "path"},
+                {
+                    data: "index",
+                    render: function (data, type, row) {
+                        if (type === 'display') {
+                            return '<button type="button" dataSetId="' + data + '" class="btn btn-danger btn-group-justified removeDS">Remove</button>';
+                        }
+                        return data;
+                    }
+                }
             ],
             ajax: "/manager/?op=getDatasets",
             rowCallback: function (row, data) {
@@ -235,6 +264,74 @@
                         if(response.status == 'error') return response.msg; //msg will be shown in editable form
                     }
                 });
+            },
+            drawCallback: function () {
+                $('.tags-input').tagsinput();
+
+                $('.removeDS').on('click', function () {
+                    $.ajax({
+                        type: "POST",
+                        url: "?op=removeDS",
+                        data: {dataset: this.getAttribute('dataSetId')},
+                        success: function (msg) {
+                            if (msg.match("^Error")) {
+                                $('#error').html(msg);
+                                $('#error').fadeIn(600).delay(5000).fadeOut(600);
+                            }
+                            else if (msg.match("^Success")) {
+                                $('.form-control').val("");
+                                $('#success').html(msg);
+                                $('#success').fadeIn(600).delay(5000).fadeOut(600);
+                                location.reload(true);
+                            }
+
+                            console.info(msg);
+                        }
+                    });
+                });
+
+                $('.tags-input').on('beforeItemAdd', function (event) {
+                    var tag = event.item;
+
+                    var ajaxData = {
+                        data: {
+                            dataset: event.target.getAttribute('dataSetId'),
+                            tag: event.item,
+                            op: 'addTag'
+                        }
+                    };
+
+                    if (!event.options || !event.options.preventPost) {
+                        $.ajax('', ajaxData)
+                            .fail(function () {
+                                // Remove the tag since there was a failure
+                                // "preventPost" here will stop this ajax call from running when the tag is removed
+//                        $('.tags-input').tagsinput('remove', tag, {preventPost: true});
+                            });
+                    }
+                });
+
+                $('.tags-input').on('beforeItemRemove', function (event) {
+                    var tag = event.item;
+
+                    var ajaxData = {
+                        data: {
+                            dataset: event.target.getAttribute('dataSetId'),
+                            tag: event.item,
+                            op: 'removeTag'
+                        }
+                    };
+
+                    if (!event.options || !event.options.preventPost) {
+                        $.ajax('', ajaxData)
+                            .fail(function () {
+                                // Re-add the tag since there was a failure
+                                // "preventPost" here will stop this ajax call from running when the tag is added
+//                        $('.tags-input').tagsinput('add', tag, {preventPost: true});
+                            });
+                    }
+                });
+
             }
         });
 
@@ -243,45 +340,26 @@
         $('#dataTables').on('change', 'input.editor-active', function () {
             $.ajax({
                 type: "POST",
-                url: "/manager/?op=activate",
-                data: { name: $(this).parent().next().next().next().text(), active: $(this).prop('checked')},
+                url: "?op=activate",
+                data: {name: $(this).parent().next().text(), active: $(this).prop('checked')},
                 success: function (msg) {
                     console.info("Dataset activated: " + msg);
                 }
             });
         });
 
-        $('#deployDS').on('click', function () {
+        $('#addDS').on('click', function () {
             $.ajax({
                 type: "POST",
-                url: "/manager/?op=deploy",
-                data: { ds: $('#ds').val(),
-                    category: $('#category-text').val(),
-                    index: $('#index-number').val(),
+                url: "?op=addDS",
+                data: {
+                    name: $('#name-text').val(),
+                    tags: $('#tags-text').val(),
                     description: $('#description-text').val(),
-                    file: $('#file').val() },
-                success: function (msg) {
-                    if (msg.match("^Error")) {
-                        $('#error').html(msg);
-                        $('#error').fadeIn(600).delay(5000).fadeOut(600);
-                    }
-                    else if (msg.match("^Success")) {
-                        $('.form-control').val("");
-                        $('#success').html(msg);
-                        $('#success').fadeIn(600).delay(5000).fadeOut(600);
-                        dataTable.ajax.reload();
-                    }
-
-                    console.info(msg);
-                }
-            });
-        });
-
-        $('#undeployDS').on('click', function () {
-            $.ajax({
-                type: "POST",
-                url: "/manager/?op=undeploy",
-                data: { ds: $('#ds').val() },
+                    file: $('#file').val(),
+                    owner: $('#owner').val(),
+                    public: $('#is-public').prop('checked')
+                },
                 success: function (msg) {
                     if (msg.match("^Error")) {
                         $('#error').html(msg);
