@@ -1,11 +1,12 @@
 package bdv.server;
 
+import bdv.db.ManagerController;
+import bdv.db.UserController;
 import bdv.model.DataSet;
+import bdv.model.User;
 import com.google.gson.stream.JsonWriter;
 import mpicbg.spim.data.SpimDataException;
 
-import org.antlr.stringtemplate.StringTemplate;
-import org.antlr.stringtemplate.StringTemplateGroup;
 import org.apache.commons.collections.Buffer;
 import org.apache.commons.collections.BufferUtils;
 import org.apache.commons.collections.buffer.CircularFifoBuffer;
@@ -19,6 +20,9 @@ import org.eclipse.jetty.server.handler.ResourceHandler;
 import org.eclipse.jetty.server.handler.StatisticsHandler;
 import org.eclipse.jetty.util.log.Log;
 import org.eclipse.jetty.util.resource.Resource;
+import org.stringtemplate.v4.ST;
+import org.stringtemplate.v4.STGroup;
+import org.stringtemplate.v4.STRawGroupDir;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -28,24 +32,20 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URISyntaxException;
 import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * @author HongKee Moon <moon@mpi-cbg.de>
  * @author Tobias Pietzsch <tobias.pietzsch@gmail.com>
  */
-public class ManagerHandler extends ContextHandler
+public class ManagerHandler extends BaseContextHandler
 {
 	private static final org.eclipse.jetty.util.log.Logger LOG = Log.getLogger( ManagerHandler.class );
-
-	private final String baseURL;
-
-	private final Server server;
-
-	private final ContextHandlerCollection handlers;
 
 	private final ConnectorStatistics connectorStats;
 
@@ -53,27 +53,23 @@ public class ManagerHandler extends ContextHandler
 
 	private long sizeDataSets = 0;
 
-	private final String thumbnailsDirectoryName;
-
 	private long totalSentBytes = 0;
 
 	// Buffer holds 1-hour period bandwidth information
 	private Buffer fifo = BufferUtils.synchronizedBuffer( new CircularFifoBuffer( 12 * 60 ) );
 
 	public ManagerHandler(
-			final String baseURL,
 			final Server server,
 			final ConnectorStatistics connectorStats,
 			final StatisticsHandler statHandler,
-			final ContextHandlerCollection handlers,
+			final ContextHandlerCollection publicDatasetHandlers,
+			final ContextHandlerCollection privateDatasetHandlers,
 			final String thumbnailsDirectoryName )
 			throws IOException, URISyntaxException
 	{
-		this.baseURL = baseURL;
-		this.server = server;
-		this.handlers = handlers;
+		super( server, publicDatasetHandlers, privateDatasetHandlers, thumbnailsDirectoryName );
+
 		this.connectorStats = connectorStats;
-		this.thumbnailsDirectoryName = thumbnailsDirectoryName;
 		setContextPath( "/" + Constants.MANAGER_CONTEXT_NAME );
 
 		ResourceHandler resHandler = new ResourceHandler();
@@ -103,19 +99,30 @@ public class ManagerHandler extends ContextHandler
 
 		if ( null != op )
 		{
-			if ( op.equals( "deploy" ) )
+			//			System.out.println( request.getParameterMap() );
+
+			if ( op.equals( "addDS" ) )
 			{
-				final String ds = request.getParameter( "ds" );
-				final String category = request.getParameter( "category" );
+				final String owner = request.getParameter( "owner" );
+				final String name = request.getParameter( "name" );
+				final String tags = request.getParameter( "tags" );
 				final String description = request.getParameter( "description" );
-				final String index = request.getParameter( "index" );
 				final String file = request.getParameter( "file" );
-				deploy( ds, category, description, index, file, baseRequest, response );
+				final boolean isPublic = Boolean.parseBoolean( request.getParameter( "public" ) );
+
+				//				System.out.println( "owner: " + owner );
+				//				System.out.println( "name: " + name );
+				//				System.out.println( "tags: " + tags );
+				//				System.out.println( "description: " + description );
+				//				System.out.println( "file: " + file );
+				//				System.out.println( "isPublic: " + isPublic );
+
+				deploy( owner, name, tags, description, file, isPublic, baseRequest, response );
 			}
-			else if ( op.equals( "undeploy" ) )
+			else if ( op.equals( "removeDS" ) )
 			{
-				final String ds = request.getParameter( "ds" );
-				undeploy( ds, baseRequest, response );
+				final long dsId = Long.parseLong( request.getParameter( "dataset" ) );
+				undeploy( dsId, baseRequest, response );
 			}
 			else if ( op.equals( "getTrafficData" ) )
 			{
@@ -141,14 +148,86 @@ public class ManagerHandler extends ContextHandler
 				final String activated = request.getParameter( "active" );
 				activateDataset( datasetName, activated, baseRequest, response );
 			}
+			else if ( op.equals( "getUsers" ) )
+			{
+				getUsers( baseRequest, response );
+			}
 			else if ( op.equals( "updateDS" ) )
 			{
 				// UpdateDS uses x-editable
 				// Please, refer http://vitalets.github.io/x-editable/docs.html
 				final String field = request.getParameter( "name" );
-				final String datasetName = request.getParameter( "pk" );
+				final Long datasetId = Long.parseLong( request.getParameter( "pk" ) );
 				final String value = request.getParameter( "value" );
-				updateDataSet( datasetName, field, value, baseRequest, response );
+
+				updateDataSet( datasetId, field, value, baseRequest, response );
+			}
+			else if ( op.equals( "addTag" ) || op.equals( "removeTag" ) )
+			{
+				processTag( op, baseRequest, request, response );
+			}
+			else if ( op.equals( "addNewUser" ) )
+			{
+				// Add new user into the database
+				final String userId = request.getParameter( "userId" );
+				final String userName = request.getParameter( "userName" );
+				final String passwd = request.getParameter( "password" );
+				final boolean isManager = Boolean.parseBoolean( request.getParameter( "isManager" ) );
+
+				boolean ret = ManagerController.addUser( userId, userName, passwd, isManager );
+
+				response.setContentType( "text/html" );
+				response.setStatus( HttpServletResponse.SC_OK );
+				baseRequest.setHandled( true );
+
+				final PrintWriter ow = response.getWriter();
+
+				if ( ret )
+					ow.write( "Success: " + userId + " created." );
+				else
+					ow.write( "Error: " + userId + " cannot be created." );
+
+				ow.close();
+			}
+			else if ( op.equals( "removeUser" ) )
+			{
+				// Remove the user from the database
+				final String userId = request.getParameter( "userId" );
+
+				boolean ret = ManagerController.removeUser( userId );
+
+				response.setContentType( "text/html" );
+				response.setStatus( HttpServletResponse.SC_OK );
+				baseRequest.setHandled( true );
+
+				final PrintWriter ow = response.getWriter();
+
+				if ( ret )
+					ow.write( "Success: " + userId + " removed." );
+				else
+					ow.write( "Error: " + userId + " cannot be removed." );
+
+				ow.close();
+			}
+			else if ( op.equals( "updateUser" ) )
+			{
+				final String field = request.getParameter( "name" );
+				final String userId = request.getParameter( "pk" );
+				final String value = request.getParameter( "value" );
+
+				if ( field.equals( "manager" ) )
+				{
+					final boolean isManager = Boolean.parseBoolean( value );
+					ManagerController.updateUserManager( userId, isManager );
+				}
+				else if ( field.equals( "name" ) )
+				{
+					ManagerController.updateUserManager( userId, value );
+				}
+
+				response.setContentType( "text/html" );
+				response.setStatus( HttpServletResponse.SC_OK );
+				baseRequest.setHandled( true );
 			}
 		}
 		else
@@ -184,39 +263,25 @@ public class ManagerHandler extends ContextHandler
 		}
 	}
 
-	private void deploy( final String datasetName, final String category, final String description, final String index, final String fileLocation, final Request baseRequest, final HttpServletResponse response ) throws IOException
+	private void deploy( final String owner, final String datasetName, final String tags, final String description, final String fileLocation, final boolean isPublic, final Request baseRequest, final HttpServletResponse response ) throws IOException
 	{
-		LOG.info( "Add new context: " + datasetName );
-		final String context = "/" + datasetName;
+		boolean ret = false;
 
-		boolean alreadyExists = false;
-		for ( final Handler handler : server.getChildHandlersByClass( CellHandler.class ) )
+		if ( !owner.isEmpty() && !fileLocation.isEmpty() && !datasetName.isEmpty() )
 		{
-			final CellHandler contextHandler = ( CellHandler ) handler;
-			if ( context.equals( contextHandler.getContextPath() ) )
-			{
-				LOG.info( "Context " + datasetName + " already exists." );
-				alreadyExists = true;
-				break;
-			}
-		}
+			final DataSet ds = new DataSet( datasetName, fileLocation, tags, description, isPublic );
+			ds.setOwner( owner );
 
-		if ( !alreadyExists )
-		{
-			CellHandler ctx = null;
-			final DataSet dataSet = new DataSet( Integer.parseInt( index ), datasetName, fileLocation, category, description );
+			// Store the new dataset
+			UserController.addDataSet( owner, ds );
 
-			try
-			{
-				ctx = new CellHandler( baseURL + context + "/", dataSet, thumbnailsDirectoryName );
-			}
-			catch ( final SpimDataException e )
-			{
-				LOG.warn( "Failed to create a CellHandler", e );
-				e.printStackTrace();
-			}
+			final String context = "/" + ( isPublic ? Constants.PUBLIC_DATASET_CONTEXT_NAME : Constants.PRIVATE_DATASET_CONTEXT_NAME ) + "/id/" + ds.getIndex();
+
+			LOG.info( "Add new context: " + ds.getName() + " on " + context );
+
+			CellHandler ctx = getCellHandler( ds, isPublic, context );
+
 			ctx.setContextPath( context );
-			handlers.addHandler( ctx );
 
 			try
 			{
@@ -227,67 +292,37 @@ public class ManagerHandler extends ContextHandler
 				LOG.warn( "Failed to start CellHandler", e );
 				e.printStackTrace();
 			}
-		}
 
-		// Store the new dataset
-		updateDataSetList();
+			ret = true;
+		}
 
 		response.setContentType( "text/html" );
 		response.setStatus( HttpServletResponse.SC_OK );
 		baseRequest.setHandled( true );
 
 		final PrintWriter ow = response.getWriter();
-		if ( alreadyExists )
-			ow.write( "Error: " + datasetName + " already exists. The dataset cannot be deployed." );
+		if ( ret )
+			ow.write( "Success: " + datasetName + " is added." );
 		else
-			ow.write( "Success: " + datasetName + " is deployed." );
+			ow.write( "Error: " + datasetName + " cannot be added." );
 		ow.close();
 	}
 
-	private void undeploy( final String datasetName, final Request baseRequest, final HttpServletResponse response ) throws IOException
+	private void undeploy( final long dsId, final Request baseRequest, final HttpServletResponse response ) throws IOException
 	{
-		LOG.info( "Remove the context: " + datasetName );
-		boolean ret = false;
+		LOG.info( "Remove the dataset: " + dsId );
 
-		final String context = "/" + datasetName;
-		for ( final Handler handler : server.getChildHandlersByClass( CellHandler.class ) )
-		{
-			final CellHandler contextHandler = ( CellHandler ) handler;
-			if ( context.equals( contextHandler.getContextPath() ) )
-			{
-				try
-				{
-					contextHandler.stop();
-				}
-				catch ( final Exception e )
-				{
-					LOG.warn( "Failed to remove the CellHandler", e );
-					e.printStackTrace();
-				}
-				contextHandler.destroy();
-				handlers.removeHandler( contextHandler );
-				ret = true;
-				break;
-			}
-		}
+		removeCellHandler( dsId );
 
-		// Store the new dataset
-		updateDataSetList();
+		// Remove it from the database
+		ManagerController.removeDataSet( dsId );
 
 		response.setContentType( "text/html" );
 		response.setStatus( HttpServletResponse.SC_OK );
 		baseRequest.setHandled( true );
 
 		final PrintWriter ow = response.getWriter();
-
-		if ( ret )
-		{
-			ow.write( "Success: " + datasetName + " is undeployed." );
-		}
-		else
-		{
-			ow.write( "Error: " + datasetName + " cannot be undeployed." );
-		}
+		ow.write( "Success: " + dsId + " is undeployed." );
 		ow.close();
 	}
 
@@ -366,8 +401,9 @@ public class ManagerHandler extends ContextHandler
 			final CellHandler contextHandler = ( CellHandler ) handler;
 			writer.beginObject();
 			writer.name( "active" ).value( contextHandler.isActive() );
-			writer.name( "category" ).value( contextHandler.getDataSet().getCategory() );
+			writer.name( "tags" ).value( contextHandler.getDataSet().getTags().stream().collect( Collectors.joining( "," ) ) );
 			writer.name( "name" ).value( contextHandler.getDataSet().getName() );
+			writer.name( "owner" ).value( contextHandler.getDataSet().getOwner() );
 			writer.name( "index" ).value( contextHandler.getDataSet().getIndex() );
 			writer.name( "description" ).value( contextHandler.getDataSet().getDescription() );
 			writer.name( "path" ).value( contextHandler.getDataSet().getXmlPath() );
@@ -394,17 +430,17 @@ public class ManagerHandler extends ContextHandler
 
 		final PrintWriter ow = response.getWriter();
 
-		final StringTemplateGroup templates = new StringTemplateGroup( "serverInfo" );
-		final StringTemplate t = templates.getInstanceOf( "templates/serverInfo" );
+		final STGroup g = new STRawGroupDir( "templates", '$', '$' );
+		final ST t = g.getInstanceOf( "serverInfo" );
 
-		t.setAttribute( "bytesSent", getByteSizeString( totalSentBytes ) );
-		t.setAttribute( "msgPerSec", connectorStats.getMessagesOutPerSecond() );
-		t.setAttribute( "openConnections", connectorStats.getConnectionsOpen() );
-		t.setAttribute( "maxOpenConnections", connectorStats.getConnectionsOpenMax() );
-		t.setAttribute( "noDataSets", noDataSets );
-		t.setAttribute( "sizeDataSets", getByteSizeString( sizeDataSets ) );
+		t.add( "bytesSent", getByteSizeString( totalSentBytes ) );
+		t.add( "msgPerSec", connectorStats.getMessagesOutPerSecond() );
+		t.add( "openConnections", connectorStats.getConnectionsOpen() );
+		t.add( "maxOpenConnections", connectorStats.getConnectionsOpenMax() );
+		t.add( "noDataSets", noDataSets );
+		t.add( "sizeDataSets", getByteSizeString( sizeDataSets ) );
 
-		ow.write( t.toString() );
+		ow.write( t.render() );
 		ow.close();
 	}
 
@@ -437,64 +473,70 @@ public class ManagerHandler extends ContextHandler
 		ow.close();
 	}
 
-	private void updateDataSet( String datasetName, String field, String value, Request baseRequest, HttpServletResponse response ) throws IOException
+	private void updateDataSet( Long datasetId, String field, String value, Request baseRequest, HttpServletResponse response ) throws IOException
 	{
 		response.setContentType( "text/html" );
 		response.setStatus( HttpServletResponse.SC_OK );
 		baseRequest.setHandled( true );
 
-		final String context = "/" + datasetName;
 		for ( final Handler handler : server.getChildHandlersByClass( CellHandler.class ) )
 		{
 			final CellHandler contextHandler = ( CellHandler ) handler;
-			if ( context.equals( contextHandler.getContextPath() ) )
+			if ( contextHandler.getDataSet().getIndex() == datasetId )
 			{
 				final DataSet dataSet = contextHandler.getDataSet();
 
-				if ( field.equals( "category" ) )
-					dataSet.setCategory( value );
-				else if ( field.equals( "index" ) )
-					dataSet.setIndex( Integer.parseInt( value ) );
+				if ( field.equals( "name" ) )
+					dataSet.setName( value );
 				else if ( field.equals( "description" ) )
 					dataSet.setDescription( value );
+
+				ManagerController.updateDataSet( dataSet );
 
 				break;
 			}
 		}
-
-		try
-		{
-			updateDataSetList();
-		}
-		catch ( IOException ioexception )
-		{
-			response.setStatus( HttpServletResponse.SC_BAD_REQUEST );
-			final PrintWriter ow = response.getWriter();
-			ow.write( "The dataset list is not stored. " + ioexception.getMessage() );
-			ow.close();
-		}
 	}
 
-	private void updateDataSetList() throws IOException
+	private void getUsers( final Request baseRequest, final HttpServletResponse response ) throws IOException
 	{
-		// Save the datasets in the given list file
-		final ArrayList< DataSet > list = new ArrayList<>();
+		response.setContentType( "application/json" );
+		response.setStatus( HttpServletResponse.SC_OK );
+		baseRequest.setHandled( true );
 
-		for ( final Handler handler : server.getChildHandlersByClass( CellHandler.class ) )
+		final PrintWriter ow = response.getWriter();
+		getJsonUsers( ow );
+		ow.close();
+	}
+
+	private void getJsonUsers( final PrintWriter out ) throws IOException
+	{
+		final JsonWriter writer = new JsonWriter( out );
+
+		writer.setIndent( "\t" );
+
+		writer.beginObject();
+
+		writer.name( "data" );
+
+		writer.beginArray();
+
+		for ( final User user : ManagerController.getAllUsers() )
 		{
-			CellHandler contextHandler = null;
-			if ( handler instanceof CellHandler )
-			{
-				contextHandler = ( CellHandler ) handler;
-
-				if ( contextHandler.isActive() )
-				{
-					list.add( contextHandler.getDataSet() );
-
-				}
-			}
+			writer.beginObject();
+			writer.name( "manager" ).value( user.isManager() );
+			writer.name( "id" ).value( user.getId() );
+			writer.name( "name" ).value( user.getName() );
+			writer.name( "timestamp" ).value( new SimpleDateFormat( "MM/dd/yyyy HH:mm:ss" ).format( user.getUpdatedTime() ) );
+			writer.endObject();
 		}
 
-		DataSet.storeDataSet( list );
+		writer.endArray();
+
+		writer.endObject();
+
+		writer.flush();
+
+		writer.close();
 	}
 }
