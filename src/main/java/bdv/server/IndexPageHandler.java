@@ -1,11 +1,16 @@
 package bdv.server;
 
 import bdv.model.DataSet;
+import bdv.util.Render;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.handler.ContextHandler;
 import org.eclipse.jetty.server.handler.HandlerCollection;
+import org.eclipse.jetty.util.log.Log;
+import org.stringtemplate.v4.ST;
+import org.stringtemplate.v4.STGroup;
+import org.stringtemplate.v4.STRawGroupDir;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -14,9 +19,11 @@ import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URISyntaxException;
+import java.security.Principal;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.stream.Collectors;
 
 /**
  * Provides the default index page of available datasets on this {@link BigDataServer}
@@ -56,7 +63,7 @@ public class IndexPageHandler extends ContextHandler
 	{
 		final ArrayList< DataSet > list = new ArrayList<>();
 
-		for ( final Handler handler : server.getChildHandlersByClass( CellHandler.class ) )
+		for ( final Handler handler : server.getChildHandlersByClass( PublicCellHandler.class ) )
 		{
 			CellHandler contextHandler = null;
 			if ( handler instanceof CellHandler )
@@ -71,68 +78,53 @@ public class IndexPageHandler extends ContextHandler
 		}
 
 		// Sort the list by Category and Index
-		Collections.sort( list, new Comparator< DataSet >()
-		{
-			@Override
-			public int compare( final DataSet lhs, DataSet rhs )
-			{
-				// return 1 if rhs should be before lhs
-				// return -1 if lhs should be before rhs
-				// return 0 otherwise
-				if ( lhs.getCategory().equals( rhs.getCategory() ) )
-				{
-					return lhs.getIndex() - rhs.getIndex();
-				}
-				else
-				{
-					return lhs.getCategory().compareToIgnoreCase( rhs.getCategory() );
-				}
-			}
-		} );
+		//		Collections.sort( list, new Comparator< DataSet >()
+		//		{
+		//			@Override
+		//			public int compare( final DataSet lhs, DataSet rhs )
+		//			{
+		//				// return 1 if rhs should be before lhs
+		//				// return -1 if lhs should be before rhs
+		//				// return 0 otherwise
+		//				if ( lhs.getCategory().equals( rhs.getCategory() ) )
+		//				{
+		//					return (int) (lhs.getIndex() - rhs.getIndex());
+		//				}
+		//				else
+		//				{
+		//					return lhs.getCategory().compareToIgnoreCase( rhs.getCategory() );
+		//				}
+		//			}
+		//		} );
+
+		final STGroup g = new STRawGroupDir( "templates", '$', '$' );
+
+		final ST indexPage = g.getInstanceOf( "indexPage" );
 
 		// Build html table for dataset list
 		final StringBuilder sb = new StringBuilder();
-		sb.append( "<!DOCTYPE html>\n" );
-		sb.append( "<html lang='en'>\n" );
-		sb.append( "<head><link href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css\" rel=\"stylesheet\"></head>\n" );
-		sb.append( "<body>\n" );
-
-		sb.append( "<div class='container'>\n" );
-		sb.append( "<h2>BigDataServer DataSet list</h2>" );
-		sb.append( "<table class='table table-hover table-bordered'>\n" );
-
-		sb.append( "<thead>\n" );
-		sb.append( "<tr>\n" );
-		sb.append( "<th>DataSet</th>\n" );
-		sb.append( "<th>Description</th>\n" );
-		sb.append( "</tr>\n" );
-		sb.append( "</thead>\n" );
 
 		for ( DataSet ds : list )
 		{
-			sb.append( "<tr>\n" );
-			sb.append( "\t<td>\n" );
-			sb.append( "\t\t<img src='" + ds.getThumbnailUrl() + "'/>\n" );
-			sb.append( "\t</td>\n" );
-			sb.append( "\t<td>\n" );
-			sb.append( "\t\tCategory: " + ds.getCategory() + "<br/>\n" );
-			sb.append( "\t\tName: " + ds.getName() + "<br/>\n" );
-			sb.append( "\t\tDescription: " + ds.getDescription() + "<br/>\n" );
+			final ST dataSetTr = g.getInstanceOf( "publicDataSetTr" );
+
+			dataSetTr.add( "thumbnailUrl", ds.getThumbnailUrl() );
+			dataSetTr.add( "dataSetTags", Render.createTagsLabel( ds ) );
+			dataSetTr.add( "dataSetName", ds.getName() );
+			dataSetTr.add( "dataSetDescription", ds.getDescription() );
 
 			String url = ds.getDatasetUrl();
 			if ( url.endsWith( "/" ) )
 				url = url.substring( 0, url.lastIndexOf( "/" ) );
 
-			sb.append( "\t\t<a href=" + url + ".xml>XML</a>&nbsp;" );
-			sb.append( "\t\t<a href=" + url + ".bdv>BDV</a><br/>\n" );
-			sb.append( "\t</td>\n" );
-			sb.append( "</tr>\n" );
-		}
-		sb.append( "</table>\n" );
-		sb.append( "</div>\n" );
-		sb.append( "</body>\n</html>" );
+			dataSetTr.add( "dataSetUrl", url );
 
-		out.write( sb.toString() );
+			sb.append( dataSetTr.render() );
+		}
+
+		indexPage.add( "dataSetTable", sb.toString() );
+
+		out.write( indexPage.render() );
 		out.close();
 	}
 }
