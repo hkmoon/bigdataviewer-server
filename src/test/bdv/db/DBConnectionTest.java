@@ -1,13 +1,12 @@
 package bdv.db;
 
 import bdv.model.DataSet;
-import bdv.model.Share;
 import bdv.model.User;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.util.HashMap;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -24,26 +23,13 @@ public class DBConnectionTest
 	public void setUp() throws Exception
 	{
 		conn = new DBConnection();
-		connect();
 		conn.initializeDatabase();
 	}
 
 	@After
 	public void tearDown() throws Exception
 	{
-		close();
 		conn = null;
-	}
-
-	void connect() throws Exception
-	{
-		assertEquals( true, conn.connect() );
-	}
-
-	void close() throws Exception
-	{
-		conn.close();
-		assertEquals( true, conn.isClosed() );
 	}
 
 	@Test
@@ -106,7 +92,12 @@ public class DBConnectionTest
 
 		conn.addDataSet( normalUser, testDataset, testDatasetDescription, "/local/xml/Test Data.xml", true );
 
-		DataSet ds = conn.getDataSet( normalUser, testDataset );
+		List< DataSet >[] lists = conn.getReadableDataSetCollection( normalUser.getId() );
+
+		DataSet ds = lists[ 0 ].get( 0 );
+
+		final long dsInt = ds.getIndex();
+
 		assertNotNull( ds );
 
 		assertEquals( true, ds.isPublic() );
@@ -121,7 +112,7 @@ public class DBConnectionTest
 		ds.setPublic( false );
 		conn.updateDataSet( normalUser, ds );
 
-		ds = conn.getDataSet( normalUser, testDataset );
+		ds = conn.getOwnDataSet( normalUser.getId(), dsInt );
 		assertNotNull( ds );
 
 		assertEquals( newDescription, ds.getDescription() );
@@ -130,7 +121,7 @@ public class DBConnectionTest
 		// 4. delete the dataset
 		conn.removeDataSet( normalUser, ds );
 
-		ds = conn.getDataSet( normalUser, testDataset );
+		ds = conn.getOwnDataSet( normalUser.getId(), dsInt );
 		assertNull( ds );
 
 		// 5. delete the normal user
@@ -148,40 +139,32 @@ public class DBConnectionTest
 		final String normalUser2 = "normalSharingUser2";
 		conn.addUser( normalUser1, normalUser1, normalUser1 );
 		conn.addUser( normalUser2, normalUser2, normalUser2 );
-		User normalUserFirst = conn.getUser( normalUser1, normalUser1 );
 
 		// 2. create a dataset made by the first normal user
 		final String normalDataset1 = "Normal dataset 1";
-		conn.addDataSet( normalUserFirst, normalDataset1, "Description", "/local/xml/Test Data.xml", false );
+		conn.addDataSet( normalUser1, normalDataset1, "Description", "/local/xml/Test Data.xml", false );
 
 		// 4. create the share with the second user
-		DataSet ds = conn.getDataSet( normalUserFirst, normalDataset1 );
-		conn.addDataSetShare( normalUserFirst, ds, normalUser2, true, true, false );
+		List< DataSet >[] lists = conn.getReadableDataSetCollection( normalUser1 );
 
-		User normalUserSecond = conn.getUser( normalUser2, normalUser2 );
-		HashMap< DataSet, Share > result = conn.getDataSetCollection( normalUserSecond );
-		for ( DataSet dataSet : result.keySet() )
+		DataSet ds = lists[ 0 ].get( 0 );
+
+		final long dsInt = ds.getIndex();
+
+		conn.addReadableDataSetShare( dsInt, normalUser2 );
+
+		List< DataSet >[] result = conn.getReadableDataSetCollection( normalUser2 );
+		for ( DataSet dataSet : result[ 1 ] )
 		{
-			assertEquals( true, result.get( dataSet ).isRead() );
-			assertEquals( true, result.get( dataSet ).isUpdate() );
-			assertEquals( false, result.get( dataSet ).isDelete() );
+			assertEquals( dsInt, dataSet.getIndex() );
 		}
 
-		conn.updateDataSetShare( normalUserFirst, ds, normalUser2, false, false, false );
-		result = conn.getDataSetCollection( normalUserSecond );
-		for ( DataSet dataSet : result.keySet() )
-		{
-			assertEquals( false, result.get( dataSet ).isRead() );
-			assertEquals( false, result.get( dataSet ).isUpdate() );
-			assertEquals( false, result.get( dataSet ).isDelete() );
-		}
-
-		conn.removeDataSetShare( normalUserFirst, ds, normalUser2 );
-		result = conn.getDataSetCollection( normalUserSecond );
-		assertEquals( 0, result.size() );
+		conn.removeReadableDataSetShare( dsInt, normalUser2 );
+		result = conn.getReadableDataSetCollection( normalUser2 );
+		assertNull( result[ 0 ] );
 
 		// 5. clean up
-		conn.removeDataSet( normalUserFirst, ds );
+		conn.removeDataSet( normalUser1, dsInt );
 		conn.removeUser( normalUser1, normalUser1 );
 		conn.removeUser( normalUser2, normalUser2 );
 	}
@@ -199,29 +182,33 @@ public class DBConnectionTest
 		conn.addDataSet( user, normalTagDataSet, "description", "/xml/path", false );
 
 		// 3. create a tag to the dataset
-		DataSet ds = conn.getDataSet( user, normalTagDataSet );
+		List< DataSet >[] lists = conn.getReadableDataSetCollection( normalTagUser );
+		DataSet ds = lists[ 0 ].get( 0 );
+
+		final long dsIndex = ds.getIndex();
+
 		conn.addDataSetTag( ds, "test" );
 
 		// 4. add more tags to the dataset
 		conn.addDataSetTag( ds, "test 2" );
 
 		// 5. get the dataset with those tags
-		ds = conn.getDataSet( user, normalTagDataSet );
+		ds = conn.getOwnDataSet( normalTagUser, dsIndex );
 		assertEquals( 2, ds.getTags().size() );
 
 		// 6. delete the tag from the dataset
 		conn.removeDataSetTag( ds, "test 2" );
-		ds = conn.getDataSet( user, normalTagDataSet );
+		ds = conn.getOwnDataSet( normalTagUser, dsIndex );
 
 		// 7. delete all the tags from the dataset
 		conn.removeDataSetTag( ds, "test" );
-		ds = conn.getDataSet( user, normalTagDataSet );
+		ds = conn.getOwnDataSet( normalTagUser, dsIndex );
 
 		// 8. get the dataset with any tag
 		assertEquals( 0, ds.getTags().size() );
 
 		// 9. delete the dataset
-		conn.removeDataSet( user, ds );
+		conn.removeDataSet( normalTagUser, dsIndex );
 
 		// 10. delete the user
 		conn.removeUser( normalTagUser, normalTagUser );
