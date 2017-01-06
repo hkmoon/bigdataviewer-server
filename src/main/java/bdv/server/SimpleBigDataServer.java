@@ -2,6 +2,7 @@ package bdv.server;
 
 import bdv.model.DataSet;
 
+import mpicbg.spim.data.SpimDataException;
 import org.apache.commons.cli.BasicParser;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Simple BigDataServe XML/HDF5 datasets over HTTP.
@@ -100,13 +102,13 @@ public class SimpleBigDataServer extends BigDataServer
 
 		final ContextHandlerCollection datasetHandlers = createHandlers( baseURL, params.getDatasets(), thumbnailsDirectoryName );
 
-		final DataSetContextHandler dataSetContextHandler = new DataSetContextHandler( datasetHandlers );
+		final DataSetContextHandler dataSetContextHandler = new DataSetContextHandler( datasetHandlers, "/" + Constants.DATASETLIST_CONTEXT_NAME, true );
 
 		handlers.addHandler( datasetHandlers );
 
 		handlers.addHandler( dataSetContextHandler );
 
-		handlers.addHandler( new JsonDatasetListHandler( server, datasetHandlers ) );
+		handlers.addHandler( new JsonDatasetListHandler( server, "/" + Constants.DATASETLIST_CONTEXT_NAME ) );
 
 		Handler handler = handlers;
 
@@ -195,5 +197,22 @@ public class SimpleBigDataServer extends BigDataServer
 			formatter.printHelp( cmdLineSyntax, description, options, null );
 		}
 		return null;
+	}
+
+	protected static ContextHandlerCollection createHandlers( final String baseURL, final Map< String, DataSet > dataSet, final String thumbnailsDirectoryName ) throws SpimDataException, IOException
+	{
+		final ContextHandlerCollection handlers = new ContextHandlerCollection();
+
+		for ( final Map.Entry< String, DataSet > entry : dataSet.entrySet() )
+		{
+			final String name = entry.getKey();
+			final DataSet ds = entry.getValue();
+			final String context = "/" + Constants.DATASET_CONTEXT_NAME + "/" + name;
+			final CellHandler ctx = new CellHandler( baseURL + context + "/", ds, thumbnailsDirectoryName );
+			ctx.setContextPath( context );
+			handlers.addHandler( ctx );
+		}
+
+		return handlers;
 	}
 }

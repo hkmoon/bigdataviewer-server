@@ -1,6 +1,8 @@
 package bdv.server;
 
+import bdv.db.ManagerController;
 import bdv.model.DataSet;
+import bdv.db.DBLoginService;
 import bdv.util.Keystore;
 
 import mpicbg.spim.data.SpimDataException;
@@ -9,17 +11,14 @@ import org.apache.commons.cli.*;
 import org.apache.commons.lang.StringUtils;
 import org.eclipse.jetty.security.ConstraintMapping;
 import org.eclipse.jetty.security.ConstraintSecurityHandler;
-import org.eclipse.jetty.security.HashLoginService;
 import org.eclipse.jetty.security.authentication.BasicAuthenticator;
 import org.eclipse.jetty.server.*;
 import org.eclipse.jetty.server.handler.*;
 import org.eclipse.jetty.util.log.Log;
 import org.eclipse.jetty.util.security.Constraint;
-import org.eclipse.jetty.util.security.Password;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -104,20 +103,38 @@ public class BigDataServer
 		connector.setPort( params.getPort() );
 		LOG.info( "Set connectors: " + connector );
 		server.setConnectors( new Connector[] { connector } );
-		final String baseURL = "http://" + server.getURI().getHost() + ":" + params.getPort();
 
-		// Handler initialization
+		PublicCellHandler.baseUrl = "http://" + server.getURI().getHost() + ":" + params.getPort();
+		PrivateCellHandler.baseUrl = "https://" + server.getURI().getHost() + ":" + params.getSslport();
+
+		// Public dataset handlers
 		final HandlerCollection handlers = new HandlerCollection();
 
-		final ContextHandlerCollection datasetHandlers = createHandlers( baseURL, params.getDatasets(), thumbnailsDirectoryName );
+		ContextHandlerCollection publicDatasetHandlers = createPublicHandlers( thumbnailsDirectoryName );
 
-		final DataSetContextHandler dataSetContextHandler = new DataSetContextHandler( datasetHandlers );
+		DataSetContextHandler dataSetContextHandler = new DataSetContextHandler( publicDatasetHandlers, "/" + Constants.PUBLIC_DATASET_CONTEXT_NAME, true );
 
-		handlers.addHandler( datasetHandlers );
+		handlers.addHandler( publicDatasetHandlers );
 
 		handlers.addHandler( dataSetContextHandler );
 
-		handlers.addHandler( new JsonDatasetListHandler( server, datasetHandlers ) );
+		handlers.addHandler( new JsonDatasetListHandler( server, "/" + Constants.PUBLIC_DATASET_TAG_CONTEXT_NAME ) );
+
+		// Private dataset handlers
+
+		ContextHandlerCollection privateDatasetHandlers = createPrivateHandlers( thumbnailsDirectoryName );
+
+		dataSetContextHandler = new DataSetContextHandler( privateDatasetHandlers, "/" + Constants.PRIVATE_DATASET_CONTEXT_NAME, false );
+
+		handlers.addHandler( privateDatasetHandlers );
+
+		handlers.addHandler( dataSetContextHandler );
+
+		handlers.addHandler( new JsonDatasetListHandler( server, "/" + Constants.PRIVATE_DATASET_TAG_CONTEXT_NAME ) );
+
+		handlers.addHandler( new UserPageHandler( server, publicDatasetHandlers, privateDatasetHandlers, thumbnailsDirectoryName ) );
+
+		//TODO: if this is the first time to create the database, we need to create at least one manager user to control databases.
 
 		Handler handler = handlers;
 		if ( params.enableManagerContext() )
@@ -125,19 +142,26 @@ public class BigDataServer
 			if ( !Keystore.checkKeystore() )
 				throw new IllegalArgumentException( "Keystore file does not exist." );
 
-			if ( !checkRealmProperty() )
-				throw new IllegalArgumentException( "Login property file does not exist." );
-
 			final HttpConfiguration https = new HttpConfiguration();
 			https.addCustomizer( new SecureRequestCustomizer() );
 
 			final SslContextFactory sslContextFactory = new SslContextFactory();
 			sslContextFactory.setKeyStorePath( Keystore.defaultPath );
 
-			final char passwordArray[] = System.console().readPassword( "Please, enter your keystore password: " );
-			String password = new String( passwordArray );
-			sslContextFactory.setKeyStorePassword( password );
-			sslContextFactory.setKeyManagerPassword( password );
+			String predefinedKeystorePass = System.getProperty( "keystorepass" );
+
+			if ( null == predefinedKeystorePass )
+			{
+				final char passwordArray[] = System.console().readPassword( "Please, enter your keystore password: " );
+				String password = new String( passwordArray );
+				sslContextFactory.setKeyStorePassword( password );
+				sslContextFactory.setKeyManagerPassword( password );
+			}
+			else
+			{
+				sslContextFactory.setKeyStorePassword( predefinedKeystorePass );
+				sslContextFactory.setKeyManagerPassword( predefinedKeystorePass );
+			}
 
 			final ServerConnector sslConnector = new ServerConnector( server,
 					new SslConnectionFactory( sslContextFactory, "http/1.1" ),
@@ -153,7 +177,7 @@ public class BigDataServer
 
 			// create StatisticsHandler wrapper and ManagerHandler
 			final StatisticsHandler statHandler = new StatisticsHandler();
-			handlers.addHandler( new ManagerHandler( baseURL, server, connectorStats, statHandler, datasetHandlers, thumbnailsDirectoryName ) );
+			handlers.addHandler( new ManagerHandler( server, connectorStats, statHandler, publicDatasetHandlers, privateDatasetHandlers, thumbnailsDirectoryName ) );
 			statHandler.setHandler( handlers );
 
 			final Constraint constraint = new Constraint();
@@ -163,18 +187,30 @@ public class BigDataServer
 			// 2 means CONFIDENTIAL. 1 means INTEGRITY
 			constraint.setDataConstraint( Constraint.DC_CONFIDENTIAL );
 
-			final ConstraintMapping cm = new ConstraintMapping();
-			cm.setPathSpec( "/" + Constants.MANAGER_CONTEXT_NAME + "/*" );
-			cm.setConstraint( constraint );
+			final ConstraintMapping managerConstraintMapping = new ConstraintMapping();
+			managerConstraintMapping.setPathSpec( "/" + Constants.MANAGER_CONTEXT_NAME + "/*" );
+			managerConstraintMapping.setConstraint( constraint );
 
-			// Please change the password in realm.properties
-			final HashLoginService loginService = new HashLoginService( "BigDataServerRealm", "etc/realm.properties" );
+			final DBLoginService loginService = new DBLoginService( "BigDataServerRealm" );
 			server.addBean( loginService );
+
+			// For the user constraint
+			final Constraint userConstraint = new Constraint();
+			userConstraint.setName( Constraint.__BASIC_AUTH );
+			userConstraint.setRoles( new String[] { "user" } );
+			userConstraint.setAuthenticate( true );
+			userConstraint.setDataConstraint( Constraint.DC_INTEGRAL );
+
+			final ConstraintMapping userConstraintMapping = new ConstraintMapping();
+			userConstraintMapping.setPathSpec( "/" + Constants.PRIVATE_DOMAIN + "/*" );
+			userConstraintMapping.setConstraint( userConstraint );
+
 
 			final ConstraintSecurityHandler sh = new ConstraintSecurityHandler();
 			sh.setLoginService( loginService );
 			sh.setAuthenticator( new BasicAuthenticator() );
-			sh.addConstraintMapping( cm );
+			sh.addConstraintMapping( managerConstraintMapping );
+			sh.addConstraintMapping( userConstraintMapping );
 			sh.setHandler( statHandler );
 
 			final HandlerList handlerList = new HandlerList();
@@ -187,58 +223,11 @@ public class BigDataServer
 
 		LOG.info( "Set handler: " + handler );
 		server.setHandler( handler );
-		LOG.info( "Server Base URL: " + baseURL );
+		LOG.info( "Server Base URL: " + PublicCellHandler.baseUrl );
+		LOG.info( "Server Base HTTPS URL: " + PrivateCellHandler.baseUrl );
 		LOG.info( "BigDataServer starting" );
 		server.start();
 		server.join();
-	}
-
-	private static boolean checkRealmProperty()
-	{
-		Path path = Paths.get( "etc/realm.properties" );
-		// check if "etc/realm.properties" exists
-		if ( Files.exists( path ) )
-			return true;
-		else
-		{
-			try
-			{
-				if ( Files.notExists( Paths.get( "etc/" ) ) )
-					Files.createDirectory( Paths.get( "etc/" ) );
-
-				final String userId = System.console().readLine( "Enter your ID for manager : " );
-				final char passwordArray[] = System.console().readPassword( "Enter your password for \"%s\": ", userId );
-
-				String md5 = Password.MD5.digest( new String( passwordArray ) );
-
-				BufferedWriter writer = Files.newBufferedWriter( path, StandardCharsets.UTF_8 );
-
-				writer.append( "#   http://www.eclipse.org/jetty/documentation/current/configuring-security-secure-passwords.html\n" );
-				writer.append( "#   Please, use obfuscated/MD5/crypted password only by using below instructions\n" );
-				writer.append( "#\n" );
-				writer.append( "# \t$ export JETTY_VERSION=9.0.0.RC0\n" );
-				writer.append( "# \t$ java -cp lib/jetty-util-$JETTY_VERSION.jar org.eclipse.jetty.util.security.Password username blahblah\n" );
-				writer.append( "# \tOBF:20771x1b206z\n" );
-				writer.append( "# \tMD5:639bae9ac6b3e1a84cebb7b403297b79\n" );
-				writer.append( "# \tCRYPT:me/ks90E221EY\n" );
-
-				writer.newLine();
-				writer.append( userId );
-				writer.append( ": " );
-				writer.append( md5 );
-				writer.append( ", admin" );
-				writer.newLine();
-
-				writer.flush();
-				writer.close();
-			}
-			catch ( IOException e )
-			{
-				e.printStackTrace();
-				return false;
-			}
-		}
-		return true;
 	}
 
 	/**
@@ -521,16 +510,29 @@ public class BigDataServer
 		return thumbnails.toFile().getAbsolutePath();
 	}
 
-	protected static ContextHandlerCollection createHandlers( final String baseURL, final Map< String, DataSet > dataSet, final String thumbnailsDirectoryName ) throws SpimDataException, IOException
+	protected static ContextHandlerCollection createPrivateHandlers( final String thumbnailsDirectoryName ) throws SpimDataException, IOException
 	{
 		final ContextHandlerCollection handlers = new ContextHandlerCollection();
 
-		for ( final Entry< String, DataSet > entry : dataSet.entrySet() )
+		for ( final DataSet ds : ManagerController.getPrivateDataSets() )
 		{
-			final String name = entry.getKey();
-			final DataSet ds = entry.getValue();
-			final String context = "/" + Constants.DATASET_CONTEXT_NAME + "/" + name;
-			final CellHandler ctx = new CellHandler( baseURL + context + "/", ds, thumbnailsDirectoryName );
+			final String context = "/" + Constants.PRIVATE_DATASET_CONTEXT_NAME + "/id/" + ds.getIndex();
+			final PrivateCellHandler ctx = new PrivateCellHandler( context + "/", ds, thumbnailsDirectoryName );
+			ctx.setContextPath( context );
+			handlers.addHandler( ctx );
+		}
+
+		return handlers;
+	}
+
+	protected static ContextHandlerCollection createPublicHandlers( final String thumbnailsDirectoryName ) throws SpimDataException, IOException
+	{
+		final ContextHandlerCollection handlers = new ContextHandlerCollection();
+
+		for ( final DataSet ds : ManagerController.getPublicDataSets() )
+		{
+			final String context = "/" + Constants.PUBLIC_DATASET_CONTEXT_NAME + "/id/" + ds.getIndex();
+			final PublicCellHandler ctx = new PublicCellHandler( context + "/", ds, thumbnailsDirectoryName );
 			ctx.setContextPath( context );
 			handlers.addHandler( ctx );
 		}
