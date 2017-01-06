@@ -24,7 +24,7 @@ public class DataSet
 	/**
 	 * DataSet Context name of this {@link bdv.server.CellHandler} is serving.
 	 */
-	private final String name;
+	private String name;
 
 	/**
 	 * Full path of the dataset xml file this {@link bdv.server.CellHandler} is serving.
@@ -33,7 +33,7 @@ public class DataSet
 
 	private String category;
 	private String description;
-	private int index;
+	private long index;
 	private long size;
 
 	private String thumbnailUrl;
@@ -45,6 +45,7 @@ public class DataSet
 	private boolean publicAccessble = false;
 	private java.sql.Timestamp updatedTime;
 
+	private final TreeSet< String > sharedUsers = new TreeSet<>();
 	private final TreeSet< String > tags = new TreeSet<>();
 
 	/**
@@ -56,7 +57,7 @@ public class DataSet
 	 * @param category the category of the dataset
 	 * @param description the description of the dataset
 	 */
-	public DataSet( int index, String name, String xmlPath, String category, String description )
+	public DataSet( long index, String name, String xmlPath, String category, String description )
 	{
 		this.name = name;
 		this.xmlPath = xmlPath;
@@ -65,7 +66,24 @@ public class DataSet
 		this.index = index;
 	}
 
-	public DataSet( int index, String name, String xmlPath, String description, String owner, boolean isPublic, Timestamp updatedTime )
+	public DataSet( String name, String xmlPath, String category, String description )
+	{
+		this.name = name;
+		this.xmlPath = xmlPath;
+		this.category = category;
+		this.description = description;
+	}
+
+	public DataSet( String name, String xmlPath, String category, String description, boolean isPublic )
+	{
+		this.name = name;
+		this.xmlPath = xmlPath;
+		this.category = category;
+		this.description = description;
+		this.publicAccessble = isPublic;
+	}
+
+	public DataSet( long index, String name, String xmlPath, String description, String owner, boolean isPublic, Timestamp updatedTime )
 	{
 		this.index = index;
 		this.name = name;
@@ -95,6 +113,11 @@ public class DataSet
 	public String getName()
 	{
 		return name;
+	}
+
+	public void setName( String name )
+	{
+		this.name = name;
 	}
 
 	/**
@@ -152,7 +175,7 @@ public class DataSet
 	 *
 	 * @return the index
 	 */
-	public int getIndex()
+	public long getIndex()
 	{
 		return index;
 	}
@@ -162,7 +185,7 @@ public class DataSet
 	 *
 	 * @param index the index
 	 */
-	public void setIndex( int index )
+	public void setIndex( long index )
 	{
 		this.index = index;
 	}
@@ -222,6 +245,16 @@ public class DataSet
 		return owner;
 	}
 
+	public void setOwner( String owner )
+	{
+		this.owner = owner;
+	}
+
+	public boolean isOwned( String user )
+	{
+		return owner.equals( user );
+	}
+
 	public Timestamp getUpdatedTime()
 	{
 		return updatedTime;
@@ -250,6 +283,16 @@ public class DataSet
 	public void addTag( String title )
 	{
 		tags.add( title );
+	}
+
+	public TreeSet< String > getSharedUsers()
+	{
+		return sharedUsers;
+	}
+
+	public void addSharedUser( String userId )
+	{
+		sharedUsers.add( userId );
 	}
 
 	/**
@@ -300,7 +343,7 @@ public class DataSet
 				writer.write( '\t' );
 				writer.write( ds.getDescription() );
 				writer.write( '\t' );
-				writer.write( ds.getIndex() );
+				writer.write( ds.getIndex() + "" );
 				writer.write( '\n' );
 			}
 			writer.flush();

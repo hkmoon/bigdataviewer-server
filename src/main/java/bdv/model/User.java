@@ -6,7 +6,6 @@ import java.sql.Timestamp;
  * Author: HongKee Moon (moon@mpi-cbg.de), Scientific Computing Facility
  * Organization: MPI-CBG Dresden
  * Date: December 2016
- * Default users: nobody
  */
 public class User
 {
