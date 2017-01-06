@@ -25,10 +25,13 @@ public class DataSetContextHandler extends ServletContextHandler
 
 	private final ContextHandlerCollection datasetHandlers;
 
-	public DataSetContextHandler( final ContextHandlerCollection datasetHandlers )
+	private final boolean isPublic;
+
+	public DataSetContextHandler( final ContextHandlerCollection datasetHandlers, final String contextPath, final boolean isPublic )
 	{
 		this.datasetHandlers = datasetHandlers;
-		setContextPath( "/" + Constants.DATASET_CONTEXT_NAME );
+		this.isPublic = isPublic;
+		setContextPath( contextPath );
 
 		final ServletHandler servletHandler = new ServletHandler();
 		Servlet servlet = new DefaultServlet();
@@ -61,7 +64,7 @@ public class DataSetContextHandler extends ServletContextHandler
 	private CellHandler findCellHandler( final String datasetName )
 	{
 		CellHandler found = null;
-		for ( final Handler handler : datasetHandlers.getChildHandlersByClass( CellHandler.class ) )
+		for ( final Handler handler : datasetHandlers.getChildHandlersByClass( isPublic ? PublicCellHandler.class : PrivateCellHandler.class ) )
 		{
 			final CellHandler contextHandler = ( CellHandler ) handler;
 
