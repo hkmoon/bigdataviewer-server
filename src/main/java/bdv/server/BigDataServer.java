@@ -1,5 +1,6 @@
 package bdv.server;
 
+import bdv.db.DBConnection;
 import bdv.db.ManagerController;
 import bdv.model.DataSet;
 import bdv.db.DBLoginService;
@@ -71,8 +72,7 @@ public class BigDataServer
 			hostname = "localhost";
 		}
 		final String thumbnailDirectory = null;
-		final boolean enableManagerContext = false;
-		return new Parameters( port, sslPort, hostname, new HashMap< String, DataSet >(), thumbnailDirectory, enableManagerContext );
+		return new Parameters( port, sslPort, hostname, new HashMap< String, DataSet >(), thumbnailDirectory );
 	}
 
 	public static void main( final String[] args ) throws Exception
@@ -107,6 +107,23 @@ public class BigDataServer
 		PublicCellHandler.baseUrl = "http://" + server.getURI().getHost() + ":" + params.getPort();
 		PrivateCellHandler.baseUrl = "https://" + server.getURI().getHost() + ":" + params.getSslport();
 
+		{
+			// Database check block
+			DBConnection dbConnection = new DBConnection();
+
+			// If this is the first time to create the database,
+			// we need to create at least one manager user to control databases.
+			if ( dbConnection.hasNoUser() )
+			{
+				System.out.println( "This is the first time to run BigDataServer with DBMS." );
+				final String managerName = System.console().readLine( "Enter name for manager: " );
+				final String managerId = System.console().readLine( "Enter id for manager : " );
+				final char passwordArray[] = System.console().readPassword( "Enter your manager password: " );
+
+				dbConnection.addUser( managerId, managerName, new String( passwordArray ), true );
+			}
+		}
+
 		// Public dataset handlers
 		final HandlerCollection handlers = new HandlerCollection();
 
@@ -134,11 +151,10 @@ public class BigDataServer
 
 		handlers.addHandler( new UserPageHandler( server, publicDatasetHandlers, privateDatasetHandlers, thumbnailsDirectoryName ) );
 
-		//TODO: if this is the first time to create the database, we need to create at least one manager user to control databases.
-
 		Handler handler = handlers;
-		if ( params.enableManagerContext() )
+
 		{
+			// SSL for manager context
 			if ( !Keystore.checkKeystore() )
 				throw new IllegalArgumentException( "Keystore file does not exist." );
 
@@ -170,7 +186,9 @@ public class BigDataServer
 			sslConnector.setPort( params.getSslport() );
 
 			server.addConnector( sslConnector );
+		}
 
+		{
 			// Add Statistics bean to the connector
 			final ConnectorStatistics connectorStats = new ConnectorStatistics();
 			connector.addBean( connectorStats );
@@ -180,6 +198,7 @@ public class BigDataServer
 			handlers.addHandler( new ManagerHandler( server, connectorStats, statHandler, publicDatasetHandlers, privateDatasetHandlers, thumbnailsDirectoryName ) );
 			statHandler.setHandler( handlers );
 
+			// For the manager constraint
 			final Constraint constraint = new Constraint();
 			constraint.setName( Constraint.__BASIC_AUTH );
 			constraint.setRoles( new String[] { "admin" } );
@@ -204,7 +223,6 @@ public class BigDataServer
 			final ConstraintMapping userConstraintMapping = new ConstraintMapping();
 			userConstraintMapping.setPathSpec( "/" + Constants.PRIVATE_DOMAIN + "/*" );
 			userConstraintMapping.setConstraint( userConstraint );
-
 
 			final ConstraintSecurityHandler sh = new ConstraintSecurityHandler();
 			sh.setLoginService( loginService );
@@ -248,16 +266,13 @@ public class BigDataServer
 
 		private final String thumbnailDirectory;
 
-		private final boolean enableManagerContext;
-
-		Parameters( final int port, final int sslPort, final String hostname, final Map< String, DataSet > datasetNameToDataSet, final String thumbnailDirectory, final boolean enableManagerContext )
+		Parameters( final int port, final int sslPort, final String hostname, final Map< String, DataSet > datasetNameToDataSet, final String thumbnailDirectory )
 		{
 			this.port = port;
 			this.sslPort = sslPort;
 			this.hostname = hostname;
 			this.datasetNameToDataSet = datasetNameToDataSet;
 			this.thumbnailDirectory = thumbnailDirectory;
-			this.enableManagerContext = enableManagerContext;
 		}
 
 		public int getPort()
@@ -288,11 +303,6 @@ public class BigDataServer
 		{
 			return datasetNameToDataSet;
 		}
-
-		public boolean enableManagerContext()
-		{
-			return enableManagerContext;
-		}
 	}
 
 	@SuppressWarnings( "static-access" )
@@ -301,11 +311,11 @@ public class BigDataServer
 		// create Options object
 		final Options options = new Options();
 
-		final String cmdLineSyntax = "BigDataServer [OPTIONS] [NAME XML] ...\n";
+		final String cmdLineSyntax = "BigDataServer [OPTIONS] ...\n";
 
 		final String description =
 				"Serves one or more XML/HDF5 datasets for remote access over HTTP.\n" +
-						"Provide (NAME XML) pairs on the command line or in a dataset file, where NAME is the name under which the dataset should be made accessible and XML is the path to the XML file of the dataset.";
+						"Please, use the web interface in order to add XML dataset.";
 
 		options.addOption( OptionBuilder
 				.withDescription( "Hostname of the server.\n(default: " + defaultParameters.getHostname() + ")" )
@@ -318,13 +328,6 @@ public class BigDataServer
 				.hasArg()
 				.withArgName( "PORT" )
 				.create( "p" ) );
-
-		// -d or multiple {name name.xml} pairs
-		options.addOption( OptionBuilder
-				.withDescription( "Dataset file: A plain text file specifying one dataset per line. Each line is formatted as \"NAME <TAB> XML\"." )
-				.hasArg()
-				.withArgName( "FILE" )
-				.create( "d" ) );
 
 		options.addOption( OptionBuilder
 				.withDescription( "Directory to store thumbnails. (new temporary directory by default.)" )
@@ -355,52 +358,15 @@ public class BigDataServer
 
 			final HashMap< String, DataSet > datasets = new HashMap< String, DataSet >( defaultParameters.getDatasets() );
 
-			boolean enableManagerContext = false;
 			int sslPort = defaultParameters.getSslport();
 
 			if ( cmd.hasOption( "m" ) )
 			{
-				enableManagerContext = true;
-
 				final String securePortString = cmd.getOptionValue( "m", Integer.toString( defaultParameters.getSslport() ) );
 				sslPort = Integer.parseInt( securePortString );
-
-				if ( !cmd.hasOption( "d" ) )
-					throw new IllegalArgumentException( "Dataset list file is necessary for BigDataServer manager" );
 			}
 
-			// Path for holding the dataset file
-			if ( cmd.hasOption( "d" ) )
-			{
-				// process the file given with "-d"
-				final String datasetFile = cmd.getOptionValue( "d" );
-
-				// check the file presence
-				final Path path = Paths.get( datasetFile );
-
-				if ( Files.notExists( path ) )
-					throw new IllegalArgumentException( "Dataset list file does not exist." );
-
-				readDatasetFile( datasets, path );
-			}
-
-			// process additional {name, name.xml} pairs given on the
-			// command-line
-			final String[] leftoverArgs = cmd.getArgs();
-			if ( leftoverArgs.length % 2 != 0 )
-				throw new IllegalArgumentException( "Dataset list has an error while processing." );
-
-			for ( int i = 0; i < leftoverArgs.length; i += 2 )
-			{
-				final String name = leftoverArgs[ i ];
-				final String xmlpath = leftoverArgs[ i + 1 ];
-				tryAddDataset( datasets, name, xmlpath );
-			}
-
-			if ( datasets.isEmpty() )
-				throw new IllegalArgumentException( "Dataset list is empty." );
-
-			return new Parameters( port, sslPort, serverName, datasets, thumbnailDirectory, enableManagerContext );
+			return new Parameters( port, sslPort, serverName, datasets, thumbnailDirectory );
 		}
 		catch ( final ParseException | IllegalArgumentException e )
 		{
@@ -410,40 +376,6 @@ public class BigDataServer
 			formatter.printHelp( cmdLineSyntax, description, options, null );
 		}
 		return null;
-	}
-
-	private static void readDatasetFile( final HashMap< String, DataSet > datasets, final Path path ) throws IOException
-	{
-		// Process dataset list file
-		DataSet.setDataSetListPath( path );
-		final List< String > lines = Files.readAllLines( path, StandardCharsets.UTF_8 );
-
-		for ( final String str : lines )
-		{
-			final String[] tokens = str.split( "\\s*\\t\\s*" );
-			if ( tokens.length >= 2 && StringUtils.isNotEmpty( tokens[ 0 ].trim() ) && StringUtils.isNotEmpty( tokens[ 1 ].trim() ) )
-			{
-				final String name = tokens[ 0 ].trim();
-				final String xmlpath = tokens[ 1 ].trim();
-
-				if ( tokens.length == 2 )
-				{
-					tryAddDataset( datasets, name, xmlpath );
-				}
-				else if ( tokens.length == 5 )
-				{
-					final String category = tokens[ 2 ].trim();
-					final String desc = tokens[ 3 ].trim();
-					final String index = tokens[ 4 ].trim();
-
-					tryAddDataset( datasets, name, xmlpath, category, desc, index );
-				}
-			}
-			else
-			{
-				LOG.warn( "Invalid dataset file line (will be skipped): {" + str + "}" );
-			}
-		}
 	}
 
 	protected static void tryAddDataset( final HashMap< String, DataSet > datasetNameToDataSet, final String... args ) throws IllegalArgumentException

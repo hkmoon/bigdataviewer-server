@@ -63,8 +63,7 @@ public class SimpleBigDataServer extends BigDataServer
 			hostname = "localhost";
 		}
 		final String thumbnailDirectory = null;
-		final boolean enableManagerContext = false;
-		return new Parameters( port, 0, hostname, new HashMap< String, DataSet >(), thumbnailDirectory, enableManagerContext );
+		return new Parameters( port, 0, hostname, new HashMap< String, DataSet >(), thumbnailDirectory );
 	}
 
 	public static void main( final String[] args ) throws Exception
@@ -169,8 +168,6 @@ public class SimpleBigDataServer extends BigDataServer
 
 			final HashMap< String, DataSet > datasets = new HashMap< String, DataSet >( defaultParameters.getDatasets() );
 
-			final boolean enableManagerContext = false;
-
 			// process additional {name, name.xml} pairs given on the
 			// command-line
 			final String[] leftoverArgs = cmd.getArgs();
@@ -187,7 +184,7 @@ public class SimpleBigDataServer extends BigDataServer
 			if ( datasets.isEmpty() )
 				throw new IllegalArgumentException( "Dataset list is empty." );
 
-			return new Parameters( port, 0, serverName, datasets, thumbnailDirectory, enableManagerContext );
+			return new Parameters( port, 0, serverName, datasets, thumbnailDirectory );
 		}
 		catch ( final ParseException | IllegalArgumentException e )
 		{
