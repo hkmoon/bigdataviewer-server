@@ -50,12 +50,20 @@ public class DataSetContextHandler extends ServletContextHandler
 		if ( datasetName.lastIndexOf( ".xml" ) != -1 )
 		{
 			datasetName = datasetName.substring( 0, datasetName.lastIndexOf( ".xml" ) );
-			findCellHandler( datasetName ).handleXml( baseRequest, response );
+			final CellHandler handler = findCellHandler( datasetName );
+			if ( null != handler )
+				handler.handleXml( baseRequest, response );
+			else
+				LOG.warn( "No handler for " + datasetName + ".xml" );
 		}
 		else if ( datasetName.lastIndexOf( ".bdv" ) != -1 )
 		{
 			datasetName = datasetName.substring( 0, datasetName.lastIndexOf( ".bdv" ) );
-			findCellHandler( datasetName ).handleBdv( baseRequest, response );
+			final CellHandler handler = findCellHandler( datasetName );
+			if ( null != handler )
+				handler.handleBdv( baseRequest, response );
+			else
+				LOG.warn( "No handler for " + datasetName + ".bdv" );
 		}
 		else
 			super.doHandle( Constants.DATASET_CONTEXT_NAME + "/" + target, baseRequest, request, response );
