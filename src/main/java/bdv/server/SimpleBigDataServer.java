@@ -25,6 +25,8 @@ import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -70,7 +72,7 @@ public class SimpleBigDataServer extends BigDataServer
 	{
 		System.setProperty( "org.eclipse.jetty.util.log.class", "org.eclipse.jetty.util.log.StdErrLog" );
 
-		final BigDataServer.Parameters params = processOptions( args, getDefaultParameters() );
+		final SimpleBigDataServer.Parameters params = processOptions( args, getDefaultParameters() );
 		if ( params == null )
 			return;
 
@@ -94,14 +96,14 @@ public class SimpleBigDataServer extends BigDataServer
 		connector.setPort( params.getPort() );
 		LOG.info( "Set connectors: " + connector );
 		server.setConnectors( new Connector[] { connector } );
-		final String baseURL = "http://" + server.getURI().getHost() + ":" + params.getPort();
+		PublicCellHandler.baseUrl = "http://" + server.getURI().getHost() + ":" + params.getPort();
 
 		// Handler initialization
 		final HandlerCollection handlers = new HandlerCollection();
 
-		final ContextHandlerCollection datasetHandlers = createHandlers( baseURL, params.getDatasets(), thumbnailsDirectoryName );
+		final ContextHandlerCollection datasetHandlers = createHandlers( params.getDatasets(), thumbnailsDirectoryName );
 
-		final DataSetContextHandler dataSetContextHandler = new DataSetContextHandler( datasetHandlers, "/" + Constants.DATASETLIST_CONTEXT_NAME, true );
+		final DataSetContextHandler dataSetContextHandler = new DataSetContextHandler( datasetHandlers, "/" + Constants.DATASET_CONTEXT_NAME, true );
 
 		handlers.addHandler( datasetHandlers );
 
@@ -115,14 +117,44 @@ public class SimpleBigDataServer extends BigDataServer
 
 		LOG.info( "Set handler: " + handler );
 		server.setHandler( handler );
-		LOG.info( "Server Base URL: " + baseURL );
+		LOG.info( "Server Base URL: " + PublicCellHandler.baseUrl );
 		LOG.info( "BigDataServer starting" );
 		server.start();
 		server.join();
 	}
 
+	protected static void tryAddDataset( final HashMap< String, DataSet > datasetNameToDataSet, final int index, final String... args ) throws IllegalArgumentException
+	{
+		if ( args.length >= 2 )
+		{
+			final String name = args[ 0 ];
+			final String xmlpath = args[ 1 ];
+
+			for ( final String reserved : Constants.RESERVED_CONTEXT_NAMES )
+				if ( name.equals( reserved ) )
+					throw new IllegalArgumentException( "Cannot use dataset name: \"" + name + "\" (reserved for internal use)." );
+			if ( datasetNameToDataSet.containsKey( name ) )
+				throw new IllegalArgumentException( "Duplicate dataset name: \"" + name + "\"" );
+			if ( Files.notExists( Paths.get( xmlpath ) ) )
+				throw new IllegalArgumentException( "Dataset file does not exist: \"" + xmlpath + "\"" );
+
+			String category = "";
+			String desc = "";
+
+			if ( args.length == 5 )
+			{
+				category = args[ 2 ];
+				desc = args[ 3 ];
+			}
+
+			DataSet ds = new DataSet( index, name, xmlpath, category, desc );
+			datasetNameToDataSet.put( name, ds );
+			LOG.info( "Dataset added: {" + name + ", " + xmlpath + "}" );
+		}
+	}
+
 	@SuppressWarnings( "static-access" )
-	static private Parameters processOptions( final String[] args, final BigDataServer.Parameters defaultParameters ) throws IOException
+	static private Parameters processOptions( final String[] args, final SimpleBigDataServer.Parameters defaultParameters ) throws IOException
 	{
 		// create Options object
 		final Options options = new Options();
@@ -178,7 +210,7 @@ public class SimpleBigDataServer extends BigDataServer
 			{
 				final String name = leftoverArgs[ i ];
 				final String xmlpath = leftoverArgs[ i + 1 ];
-				tryAddDataset( datasets, name, xmlpath );
+				tryAddDataset( datasets, ( i / 2 ) + 1, name, xmlpath );
 			}
 
 			if ( datasets.isEmpty() )
@@ -196,7 +228,7 @@ public class SimpleBigDataServer extends BigDataServer
 		return null;
 	}
 
-	protected static ContextHandlerCollection createHandlers( final String baseURL, final Map< String, DataSet > dataSet, final String thumbnailsDirectoryName ) throws SpimDataException, IOException
+	protected static ContextHandlerCollection createHandlers( final Map< String, DataSet > dataSet, final String thumbnailsDirectoryName ) throws SpimDataException, IOException
 	{
 		final ContextHandlerCollection handlers = new ContextHandlerCollection();
 
@@ -205,7 +237,7 @@ public class SimpleBigDataServer extends BigDataServer
 			final String name = entry.getKey();
 			final DataSet ds = entry.getValue();
 			final String context = "/" + Constants.DATASET_CONTEXT_NAME + "/" + name;
-			final CellHandler ctx = new CellHandler( baseURL + context + "/", ds, thumbnailsDirectoryName );
+			final PublicCellHandler ctx = new PublicCellHandler( context + "/", ds, thumbnailsDirectoryName );
 			ctx.setContextPath( context );
 			handlers.addHandler( ctx );
 		}

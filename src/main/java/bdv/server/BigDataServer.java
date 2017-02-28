@@ -378,38 +378,6 @@ public class BigDataServer
 		return null;
 	}
 
-	protected static void tryAddDataset( final HashMap< String, DataSet > datasetNameToDataSet, final String... args ) throws IllegalArgumentException
-	{
-		if ( args.length >= 2 )
-		{
-			final String name = args[ 0 ];
-			final String xmlpath = args[ 1 ];
-
-			for ( final String reserved : Constants.RESERVED_CONTEXT_NAMES )
-				if ( name.equals( reserved ) )
-					throw new IllegalArgumentException( "Cannot use dataset name: \"" + name + "\" (reserved for internal use)." );
-			if ( datasetNameToDataSet.containsKey( name ) )
-				throw new IllegalArgumentException( "Duplicate dataset name: \"" + name + "\"" );
-			if ( Files.notExists( Paths.get( xmlpath ) ) )
-				throw new IllegalArgumentException( "Dataset file does not exist: \"" + xmlpath + "\"" );
-
-			String category = "";
-			String desc = "";
-			String index = "";
-
-			if ( args.length == 5 )
-			{
-				category = args[ 2 ];
-				desc = args[ 3 ];
-				index = args[ 4 ];
-			}
-
-			DataSet ds = new DataSet( Integer.parseInt( index ), name, xmlpath, category, desc );
-			datasetNameToDataSet.put( name, ds );
-			LOG.info( "Dataset added: {" + name + ", " + xmlpath + "}" );
-		}
-	}
-
 	protected static String getThumbnailDirectoryPath( final Parameters params ) throws IOException
 	{
 		final String thumbnailDirectoryName = params.getThumbnailDirectory();
