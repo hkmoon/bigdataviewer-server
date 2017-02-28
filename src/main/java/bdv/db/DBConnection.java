@@ -18,8 +18,6 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.Optional;
 
-import static bdv.db.UserController.conn;
-
 /**
  * DBConnection holds the connection of H2 database for {@link bdv.server.BigDataServer} in advanced mode
  *
@@ -34,6 +32,16 @@ public class DBConnection
 
 	public DBConnection()
 	{
+	}
+
+	/**
+	 * Database is initialized in the first time and there is no user in the database.
+	 * @return true if there is no user in the database. Otherwise, false.
+	 */
+	public boolean hasNoUser()
+	{
+		initializeDatabase();
+		return getAllUsers() == null;
 	}
 
 	/**
