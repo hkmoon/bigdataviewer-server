@@ -29,6 +29,4 @@ public class Constants
 	public static final String PRIVATE_DATASET_TAG_CONTEXT_NAME = PRIVATE_DOMAIN + "/tag";
 
 	public static final String PRIVATE_DATASET_CONTEXT_NAME = PRIVATE_DOMAIN + "/dataset";
-
-	public static final String PRIVATE_USER_CONTEXT_NAME = PRIVATE_DOMAIN + "/user";
 }

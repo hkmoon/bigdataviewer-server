@@ -9,7 +9,6 @@ import bdv.util.Keystore;
 import mpicbg.spim.data.SpimDataException;
 
 import org.apache.commons.cli.*;
-import org.apache.commons.lang.StringUtils;
 import org.eclipse.jetty.security.ConstraintMapping;
 import org.eclipse.jetty.security.ConstraintSecurityHandler;
 import org.eclipse.jetty.security.authentication.BasicAuthenticator;
@@ -23,14 +22,11 @@ import org.eclipse.jetty.util.thread.QueuedThreadPool;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 
 /**
  * Serve XML/HDF5 datasets over HTTP.
